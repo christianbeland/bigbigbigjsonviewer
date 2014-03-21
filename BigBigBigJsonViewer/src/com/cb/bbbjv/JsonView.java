@@ -114,7 +114,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 			// Read-only for now
 			String accessMode = "r"; 
 			
-			rad = new RandomAccessFile(new File("example.json"), accessMode);
+			rad = new RandomAccessFile(new File("ugly_big_example.json"), accessMode);
     	
 			long fileLength = rad.length();
 			
