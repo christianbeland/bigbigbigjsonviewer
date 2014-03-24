@@ -10,7 +10,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Stack;
+import java.util.logging.Logger;
 
 import javax.swing.JEditorPane;
 import javax.swing.JPanel;
@@ -22,6 +24,7 @@ import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeSelectionModel;
 
+import jsyntaxpane.DefaultSyntaxKit;
 import com.cb.bbbjv.stream.IStream;
 import com.cb.bbbjv.stream.TextStream;
 import com.google.gson.Gson;
@@ -34,17 +37,21 @@ import data.TextPart;
 
 public class JsonView extends JPanel  implements TreeSelectionListener {
 	
+	private static final String EXAMPLE_JSON = "ugly_big_example.json";
+
 	private static final long serialVersionUID = -176328818653183403L;
 	private JEditorPane htmlPane;
 	  
 	private JTree tree;
+//	private SyntaxHighlighter highlighter;
 	private static int DEFAULT_BLOCK_SIZE_IN_BYTES = 100000;
-    private static boolean useSystemLookAndFeel = false;
 	    
 	    
 	public JsonView() {
         super(new GridLayout(1,0));
 
+        DefaultSyntaxKit.initKit();
+        
         DefaultMutableTreeNode top =
             new DefaultMutableTreeNode("A Node");
  
@@ -58,20 +65,23 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
  
         htmlPane = new JEditorPane();
         htmlPane.setEditable(false);
- 
+        
         JScrollPane htmlView = new JScrollPane(htmlPane);
- 
+
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
         splitPane.setTopComponent(treeView);
         splitPane.setBottomComponent(htmlView);
  
         Dimension minimumSize = new Dimension(100, 50);
-        htmlView.setMinimumSize(minimumSize);
+        htmlPane.setMinimumSize(minimumSize);
         treeView.setMinimumSize(minimumSize);
         splitPane.setDividerLocation(100); 
         splitPane.setPreferredSize(new Dimension(900, 600));
  
         add(splitPane);
+        
+
+        htmlPane.setContentType("text/java");
         
         createNodes(top);
     }
@@ -96,15 +106,15 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
     }
  
     private void displayURL(URL url) {
-        try {
+//        try {
             if (url != null) {
-                htmlPane.setPage(url);
+                //htmlPane.setPage(url);
             } else { 
-            	htmlPane.setText("File Not Found");
+            	//htmlPane.setText("File Not Found");
             }
-        } catch (IOException e) {
-            System.err.println("Attempted to read a bad URL: " + url);
-        }
+//        } catch (IOException e) {
+//            System.err.println("Attempted to read a bad URL: " + url);
+//        }
     }
  
     private void createNodes(DefaultMutableTreeNode top) {
@@ -114,7 +124,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 			// Read-only for now
 			String accessMode = "r"; 
 			
-			rad = new RandomAccessFile(new File("ugly_big_example.json"), accessMode);
+			rad = new RandomAccessFile(new File(EXAMPLE_JSON), accessMode);
     	
 			long fileLength = rad.length();
 			
@@ -125,6 +135,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 			TextPart part = textStream.getPart(rad, currentOffset, DEFAULT_BLOCK_SIZE_IN_BYTES, fileLength);
 			
 			htmlPane.setText(prettyPrintIncompleteJSON(part));
+			//htmlPane.setText(prettyPrintIncompleteJSON(part));
 			htmlPane.addKeyListener(new StreamKeyNavigator(rad, textStream, currentOffset, fileLength));
 			
 			// TODO: Build tree from data part (even if some nodes are incomplete)
