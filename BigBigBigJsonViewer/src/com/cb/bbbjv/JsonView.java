@@ -2,29 +2,34 @@ package com.cb.bbbjv;
 
 import java.awt.Dimension;
 import java.awt.GridLayout;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.net.URL;
+import java.text.NumberFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Stack;
-import java.util.logging.Logger;
 
+import javax.swing.BoxLayout;
 import javax.swing.JEditorPane;
+import javax.swing.JFormattedTextField;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
 import javax.swing.JSplitPane;
 import javax.swing.JTree;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeSelectionModel;
 
 import jsyntaxpane.DefaultSyntaxKit;
+
 import com.cb.bbbjv.stream.IStream;
 import com.cb.bbbjv.stream.TextStream;
 import com.google.gson.Gson;
@@ -43,8 +48,22 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 	private JEditorPane htmlPane;
 	  
 	private JTree tree;
-//	private SyntaxHighlighter highlighter;
-	private static int DEFAULT_BLOCK_SIZE_IN_BYTES = 100000;
+
+	private JLabel rangeSliderValue1;
+
+	private JLabel rangeSliderValue2;
+
+	private JSlider rangeSlider;
+
+	private StreamKeyboardNavigator navigator;
+
+	private StreamConfiguration configuration;
+
+	private RandomAccessFile rad;
+
+	private JFormattedTextField textArea;
+	
+	private static long DEFAULT_BLOCK_SIZE_IN_BYTES = 100000;
 	    
 	    
 	public JsonView() {
@@ -68,15 +87,59 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
         
         JScrollPane htmlView = new JScrollPane(htmlPane);
 
+        JPanel settingsPane = new JPanel();
+        settingsPane.setLayout(new BoxLayout(settingsPane, BoxLayout.PAGE_AXIS));
+        
+        NumberFormat f = NumberFormat.getNumberInstance(); 
+        f.setMaximumIntegerDigits(12);
+        f.setMinimumIntegerDigits(4);
+        f.setMaximumFractionDigits(0);
+        
+        textArea = new JFormattedTextField(f);
+        textArea.setText(Long.toString(DEFAULT_BLOCK_SIZE_IN_BYTES));
+        textArea.setMaximumSize(new Dimension(100, 30));
+        
+        PropertyChangeListener l = new PropertyChangeListener() {
+
+            @Override
+            public void propertyChange(PropertyChangeEvent evt) {
+                String text = evt.getNewValue() != null ? evt.getNewValue().toString() : "";
+                
+                if (configuration != null) {
+                	configuration.setBlockSize(Long.parseLong(text));
+                }
+            }
+        };
+        textArea.addPropertyChangeListener("value", l);
+        
+        rangeSliderValue1 = new JLabel();
+        rangeSliderValue2 = new JLabel();
+        rangeSliderValue1.setHorizontalAlignment(JLabel.LEFT);
+        rangeSliderValue2.setHorizontalAlignment(JLabel.LEFT);
+        
+        rangeSlider = new JSlider();
+        rangeSlider.setPreferredSize(new Dimension(300, rangeSlider.getPreferredSize().height));
+        rangeSlider.setMinimum(0);
+       
+        settingsPane.add(textArea);
+        settingsPane.add(rangeSliderValue1);
+        settingsPane.add(rangeSlider);
+        settingsPane.add(rangeSliderValue2);
+      
+        JSplitPane mainSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+        mainSplitPane.setTopComponent(htmlView);
+        mainSplitPane.setBottomComponent(settingsPane);
+        mainSplitPane.setDividerLocation(550); 
+        
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
         splitPane.setTopComponent(treeView);
-        splitPane.setBottomComponent(htmlView);
- 
+        splitPane.setBottomComponent(mainSplitPane);
+        
         Dimension minimumSize = new Dimension(100, 50);
         htmlPane.setMinimumSize(minimumSize);
         treeView.setMinimumSize(minimumSize);
         splitPane.setDividerLocation(100); 
-        splitPane.setPreferredSize(new Dimension(900, 600));
+        splitPane.setPreferredSize(new Dimension(900, 700));
  
         add(splitPane);
         
@@ -95,7 +158,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
  
         if (node == null) return;
  
-        Object nodeInfo = node.getUserObject();
+        //Object nodeInfo = node.getUserObject();
         if (node.isLeaf()) {
             //BookInfo book = (BookInfo)nodeInfo;
             //displayURL(book.bookURL);
@@ -105,39 +168,77 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
         }
     }
  
-    private void displayURL(URL url) {
-//        try {
-            if (url != null) {
-                //htmlPane.setPage(url);
-            } else { 
-            	//htmlPane.setText("File Not Found");
-            }
-//        } catch (IOException e) {
-//            System.err.println("Attempted to read a bad URL: " + url);
-//        }
-    }
- 
     private void createNodes(DefaultMutableTreeNode top) {
     	
-    	RandomAccessFile rad;
 		try {
 			// Read-only for now
 			String accessMode = "r"; 
 			
 			rad = new RandomAccessFile(new File(EXAMPLE_JSON), accessMode);
     	
-			long fileLength = rad.length();
+			final long fileLength = rad.length();
+
+			int startingBlockSize = (int)Math.min(fileLength, DEFAULT_BLOCK_SIZE_IN_BYTES);
+			
+			// TODO: Long slider
+			rangeSlider.setMaximum((int)fileLength);
+			
+			rangeSlider.setValue(0);
 			
 			int currentOffset = 0;
 			
-			IStream<TextPart> textStream = new TextStream();
-			
-			TextPart part = textStream.getPart(rad, currentOffset, DEFAULT_BLOCK_SIZE_IN_BYTES, fileLength);
+			final IStream<TextPart> textStream = new TextStream();
+			TextPart part = textStream.getPart(rad, currentOffset, startingBlockSize, fileLength);
 			
 			htmlPane.setText(prettyPrintIncompleteJSON(part));
-			//htmlPane.setText(prettyPrintIncompleteJSON(part));
-			htmlPane.addKeyListener(new StreamKeyNavigator(rad, textStream, currentOffset, fileLength));
 			
+			configuration = new StreamConfiguration(currentOffset, startingBlockSize);
+			configuration.addListener(new ObjectListener() {
+
+				@Override
+				public void updated() {
+					// TODO set value without loop
+					rangeSlider.setValue((int) configuration.getCurrentOffset());
+					
+	                rangeSliderValue1.setText(String.valueOf(configuration.getCurrentOffset()) + " bytes");
+	                rangeSliderValue2.setText(String.valueOf(configuration.getCurrentOffset() + configuration.getBlockSize())+" / "+fileLength + " bytes");
+				}
+			});
+			
+			configuration.addListener(new ObjectListener() {
+
+				@Override
+				public void updated() {
+					TextPart part = null;
+					try {
+						part = textStream.getPart(rad, configuration.getCurrentOffset(), (int) configuration.getBlockSize(), fileLength);
+						
+						if (part != null) {
+							htmlPane.setText(prettyPrintIncompleteJSON(part)); 
+						}
+						
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+			});
+
+            rangeSliderValue1.setText(String.valueOf(configuration.getCurrentOffset()) + " bytes");
+            rangeSliderValue2.setText(String.valueOf(configuration.getCurrentOffset() + configuration.getBlockSize())+" / "+fileLength + " bytes");
+            
+			navigator = new StreamKeyboardNavigator(fileLength, configuration);
+			htmlPane.addKeyListener(navigator);
+			
+	        rangeSlider.addChangeListener(new ChangeListener() {
+	            public void stateChanged(ChangeEvent e) {
+	                JSlider slider = (JSlider) e.getSource();
+	                
+	                int currentOffset = slider.getValue();
+	                
+            		configuration.setCurrentOffset(currentOffset);
+	            }
+	        });
+	        
 			// TODO: Build tree from data part (even if some nodes are incomplete)
 			
 			//TreeBuilder tb = new TreeBuilder();
@@ -231,8 +332,13 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 		    		sb.append(prettyfyValidJson(gson, jp, uglyAndIncomplete.substring(o.start, o.end + 1)));
 			    	lastEnd = o.end + 1;
 		    	}
-		    	invalidAfterPart = sb.toString();
 		    	
+		    	// FIXME: APPEND INVALID AT THE END OF PART!!
+		    	if (lastEnd + 2 < uglyAndIncomplete.length()) {
+		    		sb.append(uglyAndIncomplete.substring(lastEnd + 2, uglyAndIncomplete.length()));
+		    	}
+		    	
+		    	invalidAfterPart = sb.toString();
 		    } else {
 		    	invalidAfterPart = uglyAndIncomplete.substring(lastValidClosing + 2, uglyAndIncomplete.length());
 		    }
@@ -300,64 +406,5 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 		}
     }
     
-    class StreamKeyNavigator implements KeyListener {
-
-		private IStream<TextPart> textStream;
-		private int currentOffset;
-		private RandomAccessFile rad;
-		private long fileLength;
-
-		public StreamKeyNavigator(RandomAccessFile rad, IStream<TextPart> textStream, int currentOffset, long fileLength) {
-			this.rad = rad;
-			this.textStream = textStream;
-			this.currentOffset = currentOffset;
-			this.fileLength = fileLength;
-		}
-
-		@Override
-		public void keyTyped(KeyEvent e) {
-			// Nothing to do
-		}
-
-		@Override
-		public void keyPressed(KeyEvent e) {
-	        int keyCode = e.getKeyCode();
-	        switch( keyCode ) { 
-	            case KeyEvent.VK_UP:
-	            	// TODO: Use interface to notify another component that would extract data from stream
-	            	if (fetchAndDisplayDataFromStream(currentOffset - DEFAULT_BLOCK_SIZE_IN_BYTES)) {
-	            		currentOffset -= DEFAULT_BLOCK_SIZE_IN_BYTES;
-	            	}
-	                break;
-	            case KeyEvent.VK_DOWN:
-	            	// TODO: Use interface to notify another component that would extract data from stream
-	            	if (fetchAndDisplayDataFromStream(currentOffset + DEFAULT_BLOCK_SIZE_IN_BYTES)) {
-	            		currentOffset += DEFAULT_BLOCK_SIZE_IN_BYTES;
-	            	}
-	                break;
-	         }
-	    } 
-
-		@Override
-		public void keyReleased(KeyEvent e) {
-			// Nothing to do
-		}
-	    
-	    private boolean fetchAndDisplayDataFromStream(int currentOffset) {
-			TextPart part = null;
-			try {
-				part = textStream.getPart(rad, currentOffset, DEFAULT_BLOCK_SIZE_IN_BYTES, fileLength);
-				
-				if (part != null) {
-					htmlPane.setText(prettyPrintIncompleteJSON(part)); 
-				}
-				
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-			
-			return (part != null);
-	    }
-    	
-    }
+    
 }
