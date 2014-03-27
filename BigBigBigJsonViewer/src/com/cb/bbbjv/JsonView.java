@@ -1,5 +1,6 @@
 package com.cb.bbbjv;
 
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.beans.PropertyChangeEvent;
@@ -10,6 +11,10 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map.Entry;
 import java.util.Stack;
 
 import javax.swing.BoxLayout;
@@ -34,7 +39,9 @@ import com.cb.bbbjv.stream.IStream;
 import com.cb.bbbjv.stream.TextStream;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import data.IDataPart;
@@ -62,6 +69,8 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 	private RandomAccessFile rad;
 
 	private JFormattedTextField textArea;
+
+	private DefaultMutableTreeNode top;
 	
 	private static long DEFAULT_BLOCK_SIZE_IN_BYTES = 100000;
 	    
@@ -71,8 +80,8 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 
         DefaultSyntaxKit.initKit();
         
-        DefaultMutableTreeNode top =
-            new DefaultMutableTreeNode("A Node");
+        top =
+            new DefaultMutableTreeNode("Document");
  
         tree = new JTree(top);
         tree.getSelectionModel().setSelectionMode
@@ -146,7 +155,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 
         htmlPane.setContentType("text/java");
         
-        createNodes(top);
+        createNodes();
     }
 	
     /* (non-Javadoc)
@@ -168,7 +177,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
         }
     }
  
-    private void createNodes(DefaultMutableTreeNode top) {
+    private void createNodes() {
     	
 		try {
 			// Read-only for now
@@ -252,6 +261,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
     }
     
     public String prettyPrintIncompleteJSON(IDataPart part) {
+    	
 		String uglyAndIncomplete = part.toString();
 		
 		int openingLevel = 0;
@@ -307,6 +317,9 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 		String prettyJsonString = "";
 		String invalidAfterPart = "";
 		
+    	Deque<JsonElement> rootNodes =
+            new LinkedList<JsonElement>();
+    	
 		if (firstValidOpening > 0) {
 		    invalidBeforePart = uglyAndIncomplete.substring(0, firstValidOpening - 1);
 	
@@ -328,8 +341,18 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 		    			sb.append(uglyAndIncomplete.substring(lastEnd + 1, o.start - 1));
 		    		}
 			    	
+		    		String rawPart = uglyAndIncomplete.substring(o.start, o.end + 1);
+		    		
 		    		// Pretty print JSON
-		    		sb.append(prettyfyValidJson(gson, jp, uglyAndIncomplete.substring(o.start, o.end + 1)));
+		    		JsonElement jsonElement = parseJson(jp, rawPart);
+		    		
+		    		if (jsonElement != null) {
+		    			sb.append(prettyfyValidJson(gson, jsonElement));
+		    			
+		    			rootNodes.addLast(jsonElement);
+		    		} else {
+		    			sb.append(rawPart);
+		    		}
 			    	lastEnd = o.end + 1;
 		    	}
 		    	
@@ -345,8 +368,15 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 			//System.out.println(validPart);
 			 
 			try {
-				JsonElement je = jp.parse(validPart);
-				prettyJsonString = gson.toJson(je);
+				JsonElement jsonElement = parseJson(jp, validPart);
+
+	    		if (jsonElement != null) {
+	    			prettyJsonString = prettyfyValidJson(gson, jsonElement);
+
+	    			rootNodes.addFirst(jsonElement);
+	    		} else {
+	    			prettyJsonString = validPart;
+	    		}
 				
 			} catch (Exception e) {
 				System.err.println("Valid part cannot be parsed : " + validPart);
@@ -357,20 +387,74 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 			prettyJsonString = uglyAndIncomplete;
 		}
 		
+		tree.removeAll();
+		generateTree(rootNodes);
+		
 		return (new StringBuilder()).append(invalidBeforePart).append(System.lineSeparator())
 				.append(prettyJsonString).append(System.lineSeparator()).append(invalidAfterPart).toString();
     }
     
-    public String prettyfyValidJson(Gson gson, JsonParser jp, String validJson) {
-    	String prettyJsonString = null;
+    private void generateTree(Deque<JsonElement> rootNodes) {
+    	top.removeAllChildren();
+    	
+		for(JsonElement node : rootNodes) {
+			top.add(createNodeHierarchy(node));
+		}
+	}
+
+	private DefaultMutableTreeNode createNodeHierarchy(JsonElement node) {
+
+		DocumentLine line = new DocumentLine();
+		line.content = "";
+		
+		DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode(line);
+	
+		if (node.isJsonArray()) {
+            JsonArray jsonArray = node.getAsJsonArray();
+            
+            for(int i = 0 ; i < jsonArray.size() ; i++) {
+            	JsonElement e = jsonArray.get(i);
+            	
+            	rootNode.add(createNodeHierarchy(e));
+            }
+		} else if (node.isJsonObject()) {
+			JsonObject obj = node.getAsJsonObject();
+
+			line.content = obj.toString();
+			
+			for (Entry<String, JsonElement> memberEntry : obj.entrySet()){
+            	rootNode.add(createNodeHierarchy(memberEntry.getValue()));
+			}
+		} else {
+			line.content = node.toString();
+		}
+		
+		System.err.println(line.content);
+		
+		return rootNode;
+	}
+
+	public JsonElement parseJson(JsonParser jp, String validJson) {
+    	JsonElement je = null;
     	
     	try {
-			JsonElement je = jp.parse(validJson);
-			prettyJsonString = gson.toJson(je);
+			je = jp.parse(validJson);
 			
 		} catch (Exception e) {
 			System.err.println("Valid part cannot be parsed : " + validJson);
-			prettyJsonString = validJson;
+		}
+    	
+    	return je;
+    }
+    
+    public String prettyfyValidJson(Gson gson, JsonElement je) {
+    	String prettyJsonString = null;
+    	
+    	try {
+			prettyJsonString = gson.toJson(je);
+			
+		} catch (Exception e) {
+			System.err.println("Valid part cannot be parsed.");
 		}
     	
     	return prettyJsonString;
@@ -391,6 +475,15 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
             }
         }
         return index;
+    }
+    
+    class DocumentLine {
+    	String content;
+    	
+    	@Override
+    	public String toString() {
+    		return content;
+    	}
     }
     
     // TODO: Refactor
