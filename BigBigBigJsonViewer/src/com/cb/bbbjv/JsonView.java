@@ -389,6 +389,7 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
 		
 		tree.removeAll();
 		generateTree(rootNodes);
+		tree.updateUI();
 		
 		return (new StringBuilder()).append(invalidBeforePart).append(System.lineSeparator())
 				.append(prettyJsonString).append(System.lineSeparator()).append(invalidAfterPart).toString();
@@ -398,14 +399,15 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
     	top.removeAllChildren();
     	
 		for(JsonElement node : rootNodes) {
-			top.add(createNodeHierarchy(node));
+			top.add(createNodeHierarchy("", node));
 		}
 	}
 
-	private DefaultMutableTreeNode createNodeHierarchy(JsonElement node) {
+	private DefaultMutableTreeNode createNodeHierarchy(String memberName, JsonElement node) {
 
 		DocumentLine line = new DocumentLine();
 		line.content = "";
+		line.member = memberName;
 		
 		DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode(line);
 	
@@ -415,15 +417,15 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
             for(int i = 0 ; i < jsonArray.size() ; i++) {
             	JsonElement e = jsonArray.get(i);
             	
-            	rootNode.add(createNodeHierarchy(e));
+            	rootNode.add(createNodeHierarchy("", e));
             }
 		} else if (node.isJsonObject()) {
 			JsonObject obj = node.getAsJsonObject();
 
-			line.content = obj.toString();
+			line.content = "";//obj.toString();
 			
 			for (Entry<String, JsonElement> memberEntry : obj.entrySet()){
-            	rootNode.add(createNodeHierarchy(memberEntry.getValue()));
+            	rootNode.add(createNodeHierarchy(memberEntry.getKey(), memberEntry.getValue()));
 			}
 		} else {
 			line.content = node.toString();
@@ -478,11 +480,12 @@ public class JsonView extends JPanel  implements TreeSelectionListener {
     }
     
     class DocumentLine {
-    	String content;
+    	String member;
+		String content;
     	
     	@Override
     	public String toString() {
-    		return content;
+    		return (member != "" && content != "" ? member + " : " : "") + content;
     	}
     }
     
